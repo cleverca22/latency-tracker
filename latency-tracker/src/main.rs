@@ -24,17 +24,17 @@ struct TargetStats {
 }
 
 impl TargetStats {
-  pub fn new(target: &String) -> TargetStats {
-    TargetStats { target: target.to_string(), samples: VecDeque::new() }
+  pub fn new(target: impl Into<String>) -> TargetStats {
+    TargetStats { target: target.into(), samples: VecDeque::new() }
   }
   fn get_min(&self) -> u32 {
-    return *self.samples.iter().min().unwrap_or(&0u32);
+    *self.samples.iter().min().unwrap_or(&0u32)
   }
   fn get_avg(&self) -> u32 {
-    return self.samples.iter().sum::<u32>() / (self.samples.len() as u32);
+    self.samples.iter().sum::<u32>() / (self.samples.len() as u32)
   }
   fn get_max(&self) -> u32 {
-    return *self.samples.iter().max().unwrap_or(&0u32);
+    *self.samples.iter().max().unwrap_or(&0u32)
   }
   pub fn add_sample(&mut self, rtt: u32) {
     self.samples.push_back(rtt);
@@ -43,7 +43,7 @@ impl TargetStats {
     }
   }
   pub fn get_metrics(&self) -> String {
-    return format!("ping_min{{target=\"{}\"}} {}\nping_avg{{target=\"{}\"}} {}\nping_max{{target=\"{}\"}} {}", self.target, self.get_min(), self.target, self.get_avg(), self.target, self.get_max());
+    format!("ping_min{{target=\"{}\"}} {}\nping_avg{{target=\"{}\"}} {}\nping_max{{target=\"{}\"}} {}", self.target, self.get_min(), self.target, self.get_avg(), self.target, self.get_max())
   }
 }
 
@@ -56,29 +56,29 @@ fn do_ping_target(target: &str) -> Option<u32> {
   match result {
     Ok(reply) => {
       // println!("Reply from {}: bytes={} time={}ms", reply.address, data.len(), reply.rtt);
-      return Some(reply.rtt);
+      Some(reply.rtt)
     }
     Err(e) => {
       println!("{:?}", e);
-      return None;
+      None
     }
   }
 }
 
-fn spawn_worker_thread(target: String, output: Arc<Mutex<String>>) {
+fn spawn_worker_thread(target: String, output: Arc<Mutex<TargetStats>>) {
   let target = target.to_string();
   thread::spawn(move || {
-    let stats: &mut TargetStats = &mut TargetStats::new(&target);
     loop {
       {
+        let mut t = output.lock().unwrap();
+
         let res = do_ping_target(&target);
         match res {
-          Some(rtt) => stats.add_sample(rtt),
+          Some(rtt) => t.add_sample(rtt),
           None => (),
         }
-        let mut t = output.lock().unwrap();
-        *t = stats.get_metrics();
       }
+      // dont sleep while t is in scope, it holds the lock
       thread::sleep(Duration::from_millis(1000));
     }
   });
@@ -86,7 +86,7 @@ fn spawn_worker_thread(target: String, output: Arc<Mutex<String>>) {
 
 #[derive(Clone)]
 struct Svc {
-  outputs: Vec<Arc<Mutex<String>>>
+  outputs: Vec<Arc<Mutex<TargetStats>>>
 }
 
 impl Service<Request<IncomingBody>> for Svc {
@@ -97,7 +97,7 @@ impl Service<Request<IncomingBody>> for Svc {
     let mut output: String = String::new();
     for o in &self.outputs {
       let t = o.lock().unwrap();
-      output.push_str((*t).as_str());
+      output.push_str((*t).get_metrics().as_str());
       output.push_str("\n");
     }
     Box::pin(async { Ok(Response::new(Full::new(Bytes::from(output)))) } )
@@ -115,9 +115,9 @@ pub async fn main() -> Result<(),Box<dyn std::error::Error + Send + Sync>> {
     Err(e) => panic!("couldnt find env var CONFIG_FILE: {}", e)
   };
 
-  let mut outputs : Vec<Arc<Mutex<String>>> = Vec::new();
+  let mut outputs : Vec<Arc<Mutex<TargetStats>>> = Vec::new();
   for target in targets {
-    let output = Arc::new(Mutex::new(String::from("")));
+    let output = Arc::new(Mutex::new(TargetStats::new(&target)));
     spawn_worker_thread(target, output.clone());
     outputs.push(output);
   }
