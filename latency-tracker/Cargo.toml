@@ -1,0 +1,14 @@
+[package]
+name = "latency-tracker"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+ping-rs = "0.1.2"
+hyper = "1.9.0"
+hyper-util = { version = "0.1.20", features = ["tokio","server","http1"] }
+tokio = { version = "1.52.3", features = ["rt", "net", "macros", "rt-multi-thread"] }
+http-body-util = "0.1.3"
+bytes = "1.11.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
