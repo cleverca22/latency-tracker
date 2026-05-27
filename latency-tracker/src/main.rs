@@ -59,7 +59,7 @@ fn do_ping_target(target: &str) -> Option<u32> {
       Some(reply.rtt)
     }
     Err(e) => {
-      println!("{:?}", e);
+      println!("{} {:?}", target, e);
       None
     }
   }
