@@ -4,6 +4,7 @@ use hyper::server::conn::http1;
 use hyper::service::Service;
 use hyper::{Request,Response};
 use hyper::{body::Incoming as IncomingBody};
+use sd_notify::{notify,NotifyState};
 use std::collections::VecDeque;
 use std::env;
 use std::fs::File;
@@ -126,14 +127,18 @@ pub async fn main() -> Result<(),Box<dyn std::error::Error + Send + Sync>> {
   };
   let addr: SocketAddr = ([0,0,0,0],3000).into();
   let listener:TcpListener = TcpListener::bind(addr).await?;
+  let _ = notify(&[NotifyState::Ready]);
   loop {
     let (tcp,_) = listener.accept().await?;
     let io = TokioIo::new(tcp);
     let svc_clone = svc.clone();
     tokio::task::spawn(async move {
-      if let Err(err) = http1::Builder::new().timer(TokioTimer::new()).serve_connection(io, svc_clone).await {
-        println!("error serving connection {:?}", err);
-      }
+      match http1::Builder::new().timer(TokioTimer::new()).serve_connection(io, svc_clone).await {
+        Err(err) => println!("error serving connection {:?}", err),
+        Ok(_) => {
+          let _ = notify(&[NotifyState::Watchdog]);
+        },
+      };
     });
   }
 }
